@@ -9,6 +9,7 @@ Zero-dependency local web host tracker with a collapsible parallel Gantt chart, 
 - **Agent Swarm & Model Routing** — Role or state grouping, per-agent LOC ownership & event drawer, and badge/bar support for both **Claude** (`opus`, `sonnet`, `haiku`, `fable`) and **Gemini** (`pro`, `flash`, `flash_lite`) models.
 - **Tron 1977 Themes & Palettes** — `GRID` (animated perspective floor), `DARK`, and `LIGHT` modes with 5 neon palettes (`tron-blue`, `mcp-crimson`, `matrix-emerald`, `solar-amber`, `synth-violet`).
 - **Progress Video Replay & Time-Travel Scrubber** — Optional headless Chrome frame recorder (`gantt-record`) + server-side `ffmpeg` H.264 MP4 rendering (`POST /api/recording/render`) with `206 Partial Content` streaming and an interactive state-snapshot timelapse slider.
+- **Generative Sound Studio** — Pure Web Audio API agent sonification & ambient soundscape studio (`sound-studio.js`) featuring 22 Western, East Asian, Middle Eastern (microtonal Maqamat), and Rich scales; 6 episodes (including Earth Magnetosphere / VLF Chorus & 1970s Minimalist Glass Arpeggios); a 4-channel activity-reactive mixer; and saved presets synced via `/api/sound-presets`.
 - **Strict File Confinement** — `/files/*` serves only files inside `out/` and `dist/` with canonical `realpath` path-traversal protection.
 
 ## Quick Start

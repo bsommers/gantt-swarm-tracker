@@ -24,9 +24,10 @@ const MAX_LOC_BYTES = 4 * 1024 * 1024;
 const MIME = {
   '.png': 'image/png', '.gif': 'image/gif', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg',
   '.webp': 'image/webp', '.json': 'application/json', '.txt': 'text/plain; charset=utf-8',
-  '.html': 'text/html; charset=utf-8', '.svg': 'image/svg+xml', '.zip': 'application/zip',
-  '.apk': 'application/vnd.android.package-archive', '.gz': 'application/gzip',
-  '.mp4': 'video/mp4', '.webm': 'video/webm',
+  '.html': 'text/html; charset=utf-8', '.js': 'application/javascript; charset=utf-8',
+  '.mjs': 'application/javascript; charset=utf-8', '.svg': 'image/svg+xml',
+  '.zip': 'application/zip', '.apk': 'application/vnd.android.package-archive',
+  '.gz': 'application/gzip', '.mp4': 'video/mp4', '.webm': 'video/webm',
 };
 
 const log = (...a) => console.log(new Date().toISOString(), ...a);
@@ -407,6 +408,33 @@ export function createTrackerServer(options = {}) {
   const REC_DIR = join(ROOT, 'out', 'recording');
   const FRAMES_DIR = join(REC_DIR, 'frames');
   const VIDEO_PATH = join(REC_DIR, 'progress-replay.mp4');
+  const PRESETS_FILE = join(TRK, 'sound-presets.json');
+
+  async function loadSoundPresets() {
+    const data = await readJSON(PRESETS_FILE);
+    if (Array.isArray(data)) return { presets: data };
+    if (data && Array.isArray(data.presets)) return data;
+    return { presets: [] };
+  }
+  async function saveSoundPresets(payloadObj) {
+    await fsp.mkdir(TRK, { recursive: true });
+    const tmp = PRESETS_FILE + '.tmp' + process.pid;
+    await fsp.writeFile(tmp, JSON.stringify(payloadObj, null, 2));
+    await fsp.rename(tmp, PRESETS_FILE);
+  }
+  function readBody(req, limit = 262144) {
+    return new Promise((resolveBody, rejectBody) => {
+      let size = 0;
+      const chunks = [];
+      req.on('data', c => {
+        size += c.length;
+        if (size > limit) { rejectBody(new Error('payload too large')); req.destroy(); return; }
+        chunks.push(c);
+      });
+      req.on('end', () => resolveBody(Buffer.concat(chunks).toString('utf8')));
+      req.on('error', rejectBody);
+    });
+  }
 
   async function getRecordingStatus() {
     const frames = (await listDir(FRAMES_DIR)).filter(d => d.isFile() && /^frame_\d+\.png$/.test(d.name));
@@ -508,6 +536,46 @@ export function createTrackerServer(options = {}) {
         const html = await readText(join(DASHBOARD_DIR, 'index.html'));
         res.writeHead(html ? 200 : 503, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' });
         return res.end(html || '<h1>index.html missing</h1>');
+      }
+      if (path === '/sound-studio.js') {
+        const js = await readText(join(DASHBOARD_DIR, 'sound-studio.js'));
+        res.writeHead(js ? 200 : 404, { 'Content-Type': 'application/javascript; charset=utf-8', 'Cache-Control': 'no-store' });
+        return res.end(js || '// sound-studio.js missing');
+      }
+      if (path === '/api/sound-presets') {
+        if (req.method === 'GET') {
+          const data = await loadSoundPresets();
+          res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+          return res.end(JSON.stringify(data));
+        }
+        if (req.method === 'POST') {
+          try {
+            const raw = await readBody(req);
+            const body = JSON.parse(raw || '{}');
+            const cur = await loadSoundPresets();
+            let presets = Array.isArray(cur.presets) ? cur.presets : [];
+            if (Array.isArray(body.presets)) {
+              presets = body.presets
+                .filter(p => p && typeof p === 'object' && typeof p.name === 'string' && p.name.trim())
+                .slice(0, 100);
+            } else if (body.preset && typeof body.preset === 'object' && typeof body.preset.name === 'string') {
+              const name = body.preset.name.trim();
+              presets = presets.filter(p => p.name !== name).concat([{ ...body.preset, name }]);
+            } else {
+              res.writeHead(400, { 'Content-Type': 'application/json' });
+              return res.end(JSON.stringify({ ok: false, error: 'Expected presets array or preset object' }));
+            }
+            const next = { presets, updatedAt: new Date().toISOString() };
+            await saveSoundPresets(next);
+            res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+            return res.end(JSON.stringify({ ok: true, ...next }));
+          } catch (e) {
+            res.writeHead(400, { 'Content-Type': 'application/json' });
+            return res.end(JSON.stringify({ ok: false, error: e?.message || 'invalid json' }));
+          }
+        }
+        res.writeHead(405, { 'Content-Type': 'application/json' });
+        return res.end(JSON.stringify({ ok: false, error: 'Method not allowed' }));
       }
       if (path === '/api/state') {
         await refresh();

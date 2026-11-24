@@ -12,7 +12,7 @@ const REPO = resolve(HERE, '..');
 const TRACK_BIN = join(REPO, 'bin', 'track.mjs');
 const SERVE_BIN = join(REPO, 'bin', 'serve.mjs');
 
-function rawRequest({ host = '127.0.0.1', port, path, method = 'GET', headers = {} }) {
+function rawRequest({ host = '127.0.0.1', port, path, method = 'GET', headers = {}, body = null }) {
   return new Promise((resolveReq, rejectReq) => {
     const req = http.request({ host, port, path, method, headers }, res => {
       const chunks = [];
@@ -24,6 +24,7 @@ function rawRequest({ host = '127.0.0.1', port, path, method = 'GET', headers = 
       }));
     });
     req.on('error', rejectReq);
+    if (body !== null) req.write(body);
     req.end();
   });
 }
@@ -165,5 +166,40 @@ describe('gantt-swarm-tracker CLI and server', () => {
 
     const encodedTraversal = await rawRequest({ port, path: '/files/%2e%2e/package.json' });
     assert.equal(encodedTraversal.status, 403);
+  });
+
+  it('serves /sound-studio.js and persists presets via /api/sound-presets', async () => {
+    const jsRes = await rawRequest({ port, path: '/sound-studio.js' });
+    assert.equal(jsRes.status, 200);
+    assert.match(jsRes.headers['content-type'], /javascript/);
+    assert.ok(jsRes.body.includes('SoundStudioEngine'));
+    assert.ok(!/andagy/i.test(jsRes.body));
+
+    const emptyRes = await rawRequest({ port, path: '/api/sound-presets' });
+    assert.equal(emptyRes.status, 200);
+    assert.deepEqual(JSON.parse(emptyRes.body).presets, []);
+
+    const samplePreset = {
+      name: 'Test Maqam Mix',
+      config: { episode: 'desert_oud', scale: 'maqam_bayati', root: 'D', octave: 3, tempo: 78 },
+    };
+    const postRes = await rawRequest({
+      port,
+      path: '/api/sound-presets',
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ preset: samplePreset }),
+    });
+    assert.equal(postRes.status, 200);
+    const postData = JSON.parse(postRes.body);
+    assert.equal(postData.ok, true);
+    assert.equal(postData.presets.length, 1);
+    assert.equal(postData.presets[0].name, 'Test Maqam Mix');
+
+    const getRes = await rawRequest({ port, path: '/api/sound-presets' });
+    assert.equal(getRes.status, 200);
+    const getData = JSON.parse(getRes.body);
+    assert.equal(getData.presets.length, 1);
+    assert.equal(getData.presets[0].config.scale, 'maqam_bayati');
   });
 });
