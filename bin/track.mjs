@@ -4,6 +4,7 @@
 //   gantt-track [--root <dir>] <agentId> <start|progress|done|blocked|failed|note> [pct 0-100] "<message>"
 //   gantt-track [--root <dir>] --check <name> <pass|fail|running|skip> "<detail>"
 //   gantt-track [--root <dir>] --phase <phaseId> <pending|active|done>
+//   gantt-track [--root <dir>] --tokens <agentId> <input> <cacheRead> <output> [contextUsed] [model]
 import { mkdirSync, appendFileSync, writeFileSync, readFileSync, renameSync, existsSync } from 'node:fs';
 import { basename, join, resolve } from 'node:path';
 
@@ -18,7 +19,8 @@ function usage(msg, code = 2) {
   gantt-track [--root <dir>] --init [projectName] [--force]
   gantt-track [--root <dir>] <agentId> <${STATES.join('|')}> [pct] "<msg>"
   gantt-track [--root <dir>] --check <name> <${CHECKS.join('|')}> "<detail>"
-  gantt-track [--root <dir>] --phase <phaseId> <${PHASES.join('|')}>`);
+  gantt-track [--root <dir>] --phase <phaseId> <${PHASES.join('|')}>
+  gantt-track [--root <dir>] --tokens <agentId> <input> <cacheRead> <output> [contextUsed] [model]`);
   process.exit(code);
 }
 
@@ -121,6 +123,36 @@ if (args[0] === '--init') {
   const tmp = planPath + '.tmp.' + process.pid;
   writeFileSync(tmp, JSON.stringify(plan, null, 2) + '\n');
   renameSync(tmp, planPath);
+} else if (args[0] === '--tokens') {
+  const [, agentId, rawIn, rawCache, rawOut, rawCtx, rawModel] = args;
+  if (!agentId) usage('bad tokens agentId');
+  const input = Number(rawIn), cacheRead = Number(rawCache), output = Number(rawOut);
+  if (![input, cacheRead, output].every(n => Number.isFinite(n) && n >= 0)) usage('bad token numbers');
+  let contextUsed = null;
+  let model = rawModel ? String(rawModel) : '';
+  if (rawCtx !== undefined) {
+    if (/^\d+(\.\d+)?$/.test(rawCtx)) {
+      contextUsed = Number(rawCtx);
+    } else if (!rawModel) {
+      model = String(rawCtx);
+    } else {
+      usage('bad contextUsed');
+    }
+  }
+  const tokDir = join(root, '.tracker/tokens');
+  mkdirSync(tokDir, { recursive: true });
+  const tokFile = join(tokDir, agentId.replace(/[^\w.-]/g, '_') + '.json');
+  const tmp = tokFile + '.tmp.' + process.pid;
+  writeFileSync(tmp, JSON.stringify({
+    agent: agentId,
+    input: Math.round(input),
+    cacheRead: Math.round(cacheRead),
+    output: Math.round(output),
+    contextUsed: contextUsed == null ? Math.round(input + cacheRead) : Math.round(contextUsed),
+    model,
+    t,
+  }, null, 2) + '\n');
+  renameSync(tmp, tokFile);
 } else {
   const [agent, state, ...rest] = args;
   if (!agent || !STATES.includes(state)) usage('bad event');

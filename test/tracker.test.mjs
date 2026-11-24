@@ -40,18 +40,23 @@ describe('gantt-swarm-tracker CLI and server', () => {
     // 1. Initialize .tracker/plan.json via bin/track.mjs --init
     execFileSync(process.execPath, [TRACK_BIN, '--root', workDir, '--init', 'Demo Swarm App'], { encoding: 'utf8' });
 
-    // 2. Log agent events, check, and phase transitions
+    // 2. Log agent events, check, tokens, docs, and phase transitions
     execFileSync(process.execPath, [TRACK_BIN, '--root', workDir, 'architect', 'start', 'Designing modules']);
     execFileSync(process.execPath, [TRACK_BIN, '--root', workDir, 'architect', 'progress', '55', 'Writing contracts']);
     execFileSync(process.execPath, [TRACK_BIN, '--root', workDir, 'architect', 'done', 'Contracts complete']);
     execFileSync(process.execPath, [TRACK_BIN, '--root', workDir, 'builder', 'start', '10', 'Implementing core']);
+    execFileSync(process.execPath, [TRACK_BIN, '--root', workDir, '--tokens', 'architect', '1200', '3000', '450', '4200', 'claude-opus-4']);
+    execFileSync(process.execPath, [TRACK_BIN, '--root', workDir, '--tokens', 'builder', '800', '1200', '300', '2000', 'gpt-oss-120b']);
     execFileSync(process.execPath, [TRACK_BIN, '--root', workDir, '--check', 'build-core', 'pass', 'Compiled clean']);
     execFileSync(process.execPath, [TRACK_BIN, '--root', workDir, '--phase', 'plan', 'done']);
     execFileSync(process.execPath, [TRACK_BIN, '--root', workDir, '--phase', 'build', 'active']);
 
-    // 3. Create sample output artifact in out/ for Range request testing
+    // 3. Create sample output artifact in out/ and docs in workDir
     mkdirSync(join(workDir, 'out'), { recursive: true });
     writeFileSync(join(workDir, 'out', 'sample.bin'), '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ');
+    writeFileSync(join(workDir, 'README.md'), '# Demo Swarm App\n\nOverview documentation.\n');
+    mkdirSync(join(workDir, 'docs'), { recursive: true });
+    writeFileSync(join(workDir, 'docs', 'architecture.md'), '# Architecture\n\nModular design.\n');
 
     // 4. Spawn bin/serve.mjs on an ephemeral port
     port = await new Promise((resolvePort, rejectPort) => {
@@ -201,5 +206,70 @@ describe('gantt-swarm-tracker CLI and server', () => {
     const getData = JSON.parse(getRes.body);
     assert.equal(getData.presets.length, 1);
     assert.equal(getData.presets[0].config.scale, 'maqam_bayati');
+  });
+
+  it('serves /handbook.js, /api/docs, and rejects docs traversal with 403', async () => {
+    const hbRes = await rawRequest({ port, path: '/handbook.js' });
+    assert.equal(hbRes.status, 200);
+    assert.match(hbRes.headers['content-type'], /javascript/);
+    assert.ok(hbRes.body.includes('GanttHandbook'));
+    assert.ok(!/andagy/i.test(hbRes.body));
+
+    const idxRes = await rawRequest({ port, path: '/api/docs' });
+    assert.equal(idxRes.status, 200);
+    const { docs } = JSON.parse(idxRes.body);
+    assert.ok(docs.some(d => d.path === 'README.md'));
+    assert.ok(docs.some(d => d.path === 'docs/architecture.md'));
+
+    const docRes = await rawRequest({ port, path: '/api/docs/' + encodeURIComponent('docs/architecture.md') });
+    assert.equal(docRes.status, 200);
+    assert.match(JSON.parse(docRes.body).content, /Modular design/);
+
+    const travRaw = await rawRequest({ port, path: '/api/docs/../package.json' });
+    assert.equal(travRaw.status, 403);
+    const travEnc = await rawRequest({ port, path: '/api/docs/%2e%2e/package.json' });
+    assert.equal(travEnc.status, 403);
+  });
+
+  it('aggregates tokenSummary from --tokens with model tier pricing and context windows', async () => {
+    const res = await rawRequest({ port, path: '/api/state' });
+    assert.equal(res.status, 200);
+    const state = JSON.parse(res.body);
+    assert.ok(state.tokenSummary && state.tokenSummary.totals);
+    const { totals, byModel, byTask, byPhase, byRole } = state.tokenSummary;
+    assert.equal(totals.input, 2000);
+    assert.equal(totals.cacheRead, 4200);
+    assert.equal(totals.output, 750);
+    assert.equal(totals.total, 6950);
+    assert.ok(totals.estCostUsd > 0);
+    assert.ok(byModel.some(m => m.key === 'claude-opus-4' && m.contextWindow === 200000));
+    assert.ok(byModel.some(m => m.key === 'gpt-oss-120b' && m.contextWindow === 128000));
+    assert.ok(byTask.some(t => t.id === 'architect' && t.total === 4650));
+    assert.ok(byPhase.length >= 2);
+    assert.ok(byRole.length >= 2);
+  });
+
+  it('rejects cross-site Origin on POST routes with 403', async () => {
+    const postPresets = await rawRequest({
+      port,
+      path: '/api/sound-presets',
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Origin: 'https://evil.example',
+      },
+      body: JSON.stringify({ preset: { name: 'Bad', config: {} } }),
+    });
+    assert.equal(postPresets.status, 403);
+
+    const postRender = await rawRequest({
+      port,
+      path: '/api/recording/render',
+      method: 'POST',
+      headers: {
+        Origin: 'https://evil.example',
+      },
+    });
+    assert.equal(postRender.status, 403);
   });
 });

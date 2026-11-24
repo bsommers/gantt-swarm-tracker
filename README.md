@@ -6,7 +6,9 @@ Zero-dependency local web host tracker with a collapsible parallel Gantt chart, 
 
 - **Zero runtime npm dependencies** — Pure Node.js ESM (`node:http`, `node:fs`, `node:crypto`, `node:child_process`) + single-file HTML/SVG/CSS dashboard.
 - **Collapsible Parallel Gantt Timeline** — Phase & agent swimlanes, animated active stripes, `NOW` cursor, `ALL` / `1H` / `15M` zoom, hover tooltips, and `localStorage` collapse persistence.
-- **Agent Swarm & Model Routing** — Role or state grouping, per-agent LOC ownership & event drawer, and badge/bar support for both **Claude** (`opus`, `sonnet`, `haiku`, `fable`) and **Gemini** (`pro`, `flash`, `flash_lite`) models.
+- **Agent Swarm & Model Routing** — Role or state grouping, per-agent LOC ownership & event drawer, and badge/bar support for **Claude** (`opus`, `sonnet`, `haiku`, `fable`), **Gemini** (`pro`, `flash`, `flash_lite`), and **GPT-OSS** (`gpt_oss`) models.
+- **Token & Context Analytics** — Real-time transcript & `--tokens` ingestion (`gantt-track --tokens`) with `tokenSummary` across **By Model**, **By Task**, **By Phase**, **By Role**, and **Totals** views, tier pricing, cache hit %, and context-window saturation bars.
+- **Project Book & Help Shortcuts** — Built-in markdown documentation reader (`B`, backed by `/api/docs`) and interactive shortcut/CLI quick-reference (`?`, plus `S` Sound Studio, `V` Replay Video, `G` Collapse Gantt, `1`/`2`/`3` Theme modes).
 - **Tron 1977 Themes & Palettes** — `GRID` (animated perspective floor), `DARK`, and `LIGHT` modes with 5 neon palettes (`tron-blue`, `mcp-crimson`, `matrix-emerald`, `solar-amber`, `synth-violet`).
 - **Progress Video Replay & Time-Travel Scrubber** — Optional headless Chrome frame recorder (`gantt-record`) + server-side `ffmpeg` H.264 MP4 rendering (`POST /api/recording/render`) with `206 Partial Content` streaming and an interactive state-snapshot timelapse slider.
 - **Generative Sound Studio** — Pure Web Audio API agent sonification & ambient soundscape studio (`sound-studio.js`) featuring 22 Western, East Asian, Middle Eastern (microtonal Maqamat), and Rich scales; 6 episodes (including Earth Magnetosphere / VLF Chorus & 1970s Minimalist Glass Arpeggios); a 4-channel activity-reactive mixer; and saved presets synced via `/api/sound-presets`.
@@ -57,6 +59,9 @@ gantt-track [--root <dir>] --check <name> <pass|fail|running|skip> "<detail>"
 
 # Update phase status
 gantt-track [--root <dir>] --phase <phaseId> <pending|active|done>
+
+# Report token & context usage
+gantt-track [--root <dir>] --tokens <agentId> <input> <cacheRead> <output> [contextUsed] [model]
 ```
 
 ### `gantt-record` (`bin/recorder.mjs`)
