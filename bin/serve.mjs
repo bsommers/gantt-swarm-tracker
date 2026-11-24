@@ -784,6 +784,112 @@ export function createTrackerServer(options = {}) {
     return entries;
   }
 
+  const AGY_DB_PATH = resolve(options.agyDbPath || process.env.TRACKER_AGY_DB || join(homedir(), '.gemini', 'antigravity-cli', 'conversation_summaries.db'));
+  const AGY_SESSIONS_PY = `
+import json, os, sqlite3, sys
+from urllib.parse import unquote
+
+db_path = sys.argv[1]
+if not os.path.exists(db_path):
+    print(json.dumps({"sessions": []}))
+    sys.exit(0)
+
+def parse_workspace(raw):
+    if not raw:
+        return ""
+    val = raw.strip()
+    if val.startswith("["):
+        try:
+            arr = json.loads(val)
+            val = next((x for x in arr if isinstance(x, str) and x.strip()), "")
+        except Exception:
+            pass
+    if val.startswith("file://"):
+        val = unquote(val[7:])
+    return val
+
+def make_dir_label(ws):
+    if not ws:
+        return "(no workspace)"
+    marker = "/src/"
+    if marker in ws:
+        return ws.split(marker, 1)[1].strip("/") or ws
+    home = os.path.expanduser("~")
+    if ws.startswith(home + "/"):
+        return "~/" + ws[len(home) + 1:].strip("/")
+    parts = [p for p in ws.strip("/").split("/") if p]
+    return "/".join(parts[-2:]) if len(parts) >= 2 else (parts[0] if parts else ws)
+
+try:
+    conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True, timeout=2.0)
+    rows = conn.execute("""
+        SELECT
+            s.conversation_id,
+            s.title,
+            s.preview,
+            s.step_count,
+            s.last_modified_time,
+            s.workspace_uris,
+            s.status,
+            s.agent_name,
+            COALESCE(NULLIF(s.parent_conversation_id, ''), p.parent_id, '') AS parent_id,
+            s.nesting_depth,
+            s.not_fully_idle,
+            s.group_id
+        FROM conversation_summaries s
+        LEFT JOIN conversation_parents p ON s.conversation_id = p.conversation_id
+        ORDER BY s.last_modified_time DESC
+        LIMIT 150
+    """).fetchall()
+    conn.close()
+    sessions = []
+    for r in rows:
+        ws = parse_workspace(r[5])
+        status = r[6] or ""
+        sessions.append({
+            "conversationId": r[0] or "",
+            "title": r[1] or "",
+            "preview": r[2] or "",
+            "stepCount": int(r[3] or 0),
+            "lastModifiedTime": r[4] or "",
+            "workspaceUris": r[5] or "",
+            "workspace": ws,
+            "dirLabel": make_dir_label(ws),
+            "status": status,
+            "active": status == "CASCADE_RUN_STATUS_RUNNING",
+            "agentName": r[7] or "",
+            "parentId": r[8] or "",
+            "nestingDepth": int(r[9] or 0),
+            "notFullyIdle": bool(r[10]),
+            "groupId": r[11] or "",
+        })
+    print(json.dumps({"sessions": sessions}))
+except Exception:
+    print(json.dumps({"sessions": []}))
+`;
+
+  async function loadAgySessions() {
+    const updatedAt = new Date().toISOString();
+    try {
+      await fsp.access(AGY_DB_PATH);
+    } catch {
+      return { sessions: [], updatedAt };
+    }
+    try {
+      const { stdout } = await execFileAsync('python3', ['-c', AGY_SESSIONS_PY, AGY_DB_PATH], {
+        timeout: 5000,
+        maxBuffer: 4 * 1024 * 1024,
+      });
+      const parsed = JSON.parse(stdout || '{}');
+      return {
+        sessions: Array.isArray(parsed.sessions) ? parsed.sessions : [],
+        updatedAt,
+      };
+    } catch {
+      return { sessions: [], updatedAt };
+    }
+  }
+
   const server = http.createServer(async (req, res) => {
     try {
       const rawReq = req.url || '/';
@@ -864,6 +970,16 @@ export function createTrackerServer(options = {}) {
         const js = await readText(join(DASHBOARD_DIR, 'handbook.js'));
         res.writeHead(js ? 200 : 404, { 'Content-Type': 'application/javascript; charset=utf-8', 'Cache-Control': 'no-store' });
         return res.end(js || '// handbook.js missing');
+      }
+      if (path === '/session-tree-panel.js') {
+        const js = await readText(join(DASHBOARD_DIR, 'session-tree-panel.js'));
+        res.writeHead(js ? 200 : 404, { 'Content-Type': 'application/javascript; charset=utf-8', 'Cache-Control': 'no-store' });
+        return res.end(js || '// session-tree-panel.js missing');
+      }
+      if (path === '/api/agy-sessions') {
+        const data = await loadAgySessions();
+        res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+        return res.end(JSON.stringify(data));
       }
       if (path === '/api/docs') {
         const docs = await listDocEntries();

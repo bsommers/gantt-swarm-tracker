@@ -272,4 +272,19 @@ describe('gantt-swarm-tracker CLI and server', () => {
     });
     assert.equal(postRender.status, 403);
   });
+
+  it('serves /session-tree-panel.js and /api/agy-sessions', async () => {
+    const jsRes = await rawRequest({ port, path: '/session-tree-panel.js' });
+    assert.equal(jsRes.status, 200);
+    assert.match(jsRes.headers['content-type'], /javascript/);
+    assert.ok(jsRes.body.includes('agyTreePanel'));
+    assert.ok(!/andagy/i.test(jsRes.body));
+
+    const apiRes = await rawRequest({ port, path: '/api/agy-sessions' });
+    assert.equal(apiRes.status, 200);
+    assert.match(apiRes.headers['content-type'], /application\/json/);
+    const data = JSON.parse(apiRes.body);
+    assert.ok(Array.isArray(data.sessions));
+    assert.ok(typeof data.updatedAt === 'string');
+  });
 });
