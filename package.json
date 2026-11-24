@@ -1,0 +1,28 @@
+{
+  "name": "gantt-swarm-tracker",
+  "version": "0.1.0",
+  "description": "Zero-dependency local web host tracker with collapsible parallel Gantt chart, agent swarm cards, Tron 1977 themes, and live MP4 progress video replay",
+  "type": "module",
+  "license": "MIT",
+  "bin": {
+    "gantt-tracker": "./bin/serve.mjs",
+    "gantt-track": "./bin/track.mjs",
+    "gantt-record": "./bin/recorder.mjs"
+  },
+  "scripts": {
+    "start": "node bin/serve.mjs",
+    "test": "node --test test/*.test.mjs"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "keywords": [
+    "gantt",
+    "swarm",
+    "agent-tracker",
+    "dashboard",
+    "sse",
+    "timelapse",
+    "tron"
+  ]
+}
